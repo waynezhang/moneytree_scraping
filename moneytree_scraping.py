@@ -49,10 +49,145 @@ print(json.dumps(account_balances, indent=4, ensure_ascii=False))
 import json
 from types import SimpleNamespace
 from typing import Optional
+from enum import Enum
 import requests
 
 
+class API(Enum):
+    # ペイロード(パラメータ)なし
+    # 強いて言えば locate=ja だけは指定されていました。
+    SNAPSHOT = "/web/presenter/guests/data_snapshot.json"
+    """
+    前回のログインセッションだろうか。パラメータが多すぎてなんと説明したら良いかわからない。
+    以下にJSONで取得できた情報の型を記載します。
+
+    .
+    └── guest
+        ├── id <int>
+        ├── locale_identifier <string>
+        ├── email <string>
+        ├── unconfirmed_email <null>
+        ├── uid <string>
+        ├── confirmed_at <string>
+        ├── confirmation_sent_at <string>
+        ├── updated_at <string>
+        ├── created_at <string>
+        ├── base_currency <string>
+        ├── subscription_level <string>
+        ├── country <string>
+        ├── payment_provider <null>
+        ├── subscriptions [].
+        │     ├── category <string>
+        │     ├── subscription_level <string>
+        │     ├── subscription_interval <null>
+        │     ├── subscription_period_ends_at <null>
+        │     ├── subscription_trial_expires_at <null>
+        │     ├── payment_source <null>
+        │     └── payment_provider <null>
+        ├── institutions []null
+        └── credentials [].
+              ├── id <int>
+              ├── last_success <string>
+              ├── status_set_at <string>
+              ├── institution_name <string>
+              ├── institution_id <int>
+              ├── auth_type <int>
+              ├── status <string>
+              ├── error_info
+              │   ├── reason <string>
+              │   ├── localized_reason <string>
+              │   ├── localized_description <string>
+              │   ├── url <null>
+              │   ├── actionable <bool>
+              │   └── input_fields []null
+              ├── force_refreshable <bool>
+              ├── foreground_refreshable <bool>
+              ├── auto_run <bool>
+              ├── uses_certificate <bool>
+              ├── background_refresh_frequency <int>
+              ├── institution
+              │   └── id <int>
+              └── accounts [].
+                    ├── id <int>
+                    ├── account_type <string>
+                    ├── currency <string>
+                    ├── institution_account_number <null>
+                    ├── institution_account_name <string>
+                    ├── branch_name <null>
+                    ├── nickname <string>
+                    ├── status <string>
+                    ├── credential_id <int>
+                    ├── sub_type <string>
+                    ├── detail_type <string>
+                    ├── group <string>
+                    ├── current_balance <float>
+                    └── current_balance_in_base <float>
+
+          └── accounts [].
+                ├── id <int>
+                ├── account_type <string>
+                ├── currency <string>
+    このあたりで口座残高を取得できそうです。
+    """
+    CASHFLOW = "/web/presenter/cash-flow.json"
+    """キャッシュフローを取得します。
+    パラメータ泊、全年数に渡る支出と収入とその合計を算出します。
+    ただし、カテゴリーは口座IDの形式で表示されますので、
+    口座名を知るためにはaccounts.jsonと照会しなれけばなりません。。
+
+    .
+    └── cash_flow [].
+          ├── month <string>
+          ├── amount_in <float>
+          ├── amount_out <float>
+          ├── amount_total <float>
+          └── categories
+              ├── 88 <float>
+              ├── 89 <float>
+              ├── 90 <float>
+              ├── 184186 <float>
+              ├── 195532 <float>
+              ├── 11 <float>
+              ├── 12 <float>
+              ├── 21 <float>
+              ├── 27 <float>
+              ├── 34 <float>
+              ├── 35 <float>
+              ├── 40 <float>
+              ├── 46 <float>
+              ├── 50 <float>
+              ├── 52 <float>
+              ├── 63 <float>
+              ├── 71 <float>
+              ├── 78 <float>
+              ├── 160258 <float>
+              └── 96 <float>
+    """
+
+
+class Response(requests.Response):
+    """Custom Response Class
+
+    # Usage:
+        resp = requests.get(url=cls.origin + api.value,
+                            headers=cls.__headers,
+                            timeout=400,
+                            params=params)
+        custom_resp = Response()
+        custom_resp.__dict__.update(resp.__dict__)
+    """
+
+    def indented_json(self):
+        """tab indent JSON"""
+        return json.dumps(self.json(), indent=4, ensure_ascii=False)
+
+    def object(self):
+        """property accessable object"""
+        return SimpleNamespace(**self.json())
+
+
 class Moneytree:
+    """Moneytree API"""
     origin = "https://jp-api.getmoneytree.com/v8/api"
     __headers = {"Content-Type": "application/json"}
 
@@ -64,132 +199,24 @@ class Moneytree:
         Moneytree.__headers.update({"Authorization": f"Bearer {token}"})
 
     @classmethod
-    def _get_json(cls, url: str, prop_access: bool, **params):
-        resp = requests.get(cls.origin + url,
+    def get(cls, api: API, **params) -> Response:
+        """get data from moneytree API"""
+        resp = requests.get(url=cls.origin + api.value,
                             headers=cls.__headers,
+                            timeout=400,
                             params=params)
         if resp.status_code == 401:
             raise requests.HTTPError("tokenの有効期限が切れました。Bearerトークンを再設定してください。")
         resp.raise_for_status()  # status_code 200番台以外のときにエラー
-        if prop_access:
-            return resp.json(object_hook=lambda x: SimpleNamespace(**x))
-        return resp.json()
+        # if prop_access:
+        #     return resp.json(object_hook=lambda x: SimpleNamespace(**x))
 
-    def get_data_snapshot(self, prop_access=False):
-        """
-        前回のログインセッションだろうか。パラメータが多すぎてなんと説明したら良いかわからない。
-        以下にJSONで取得できた情報の型を記載します。
+        # success response
+        custom_resp = Response()
+        custom_resp.__dict__.update(resp.__dict__)
+        return custom_resp
 
-        .
-        └── guest
-            ├── id <int>
-            ├── locale_identifier <string>
-            ├── email <string>
-            ├── unconfirmed_email <null>
-            ├── uid <string>
-            ├── confirmed_at <string>
-            ├── confirmation_sent_at <string>
-            ├── updated_at <string>
-            ├── created_at <string>
-            ├── base_currency <string>
-            ├── subscription_level <string>
-            ├── country <string>
-            ├── payment_provider <null>
-            ├── subscriptions [].
-            │     ├── category <string>
-            │     ├── subscription_level <string>
-            │     ├── subscription_interval <null>
-            │     ├── subscription_period_ends_at <null>
-            │     ├── subscription_trial_expires_at <null>
-            │     ├── payment_source <null>
-            │     └── payment_provider <null>
-            ├── institutions []null
-            └── credentials [].
-                  ├── id <int>
-                  ├── last_success <string>
-                  ├── status_set_at <string>
-                  ├── institution_name <string>
-                  ├── institution_id <int>
-                  ├── auth_type <int>
-                  ├── status <string>
-                  ├── error_info
-                  │   ├── reason <string>
-                  │   ├── localized_reason <string>
-                  │   ├── localized_description <string>
-                  │   ├── url <null>
-                  │   ├── actionable <bool>
-                  │   └── input_fields []null
-                  ├── force_refreshable <bool>
-                  ├── foreground_refreshable <bool>
-                  ├── auto_run <bool>
-                  ├── uses_certificate <bool>
-                  ├── background_refresh_frequency <int>
-                  ├── institution
-                  │   └── id <int>
-                  └── accounts [].
-                        ├── id <int>
-                        ├── account_type <string>
-                        ├── currency <string>
-                        ├── institution_account_number <null>
-                        ├── institution_account_name <string>
-                        ├── branch_name <null>
-                        ├── nickname <string>
-                        ├── status <string>
-                        ├── credential_id <int>
-                        ├── sub_type <string>
-                        ├── detail_type <string>
-                        ├── group <string>
-                        ├── current_balance <float>
-                        └── current_balance_in_base <float>
-
-              └── accounts [].
-                    ├── id <int>
-                    ├── account_type <string>
-                    ├── currency <string>
-        このあたりで口座残高を取得できそうです。
-
-        """
-        return Moneytree._get_json("/web/presenter/guests/data_snapshot.json",
-                                   prop_access=prop_access)
-        # ペイロード(パラメータ)なし
-        # 強いて言えば locate=ja だけは指定されていました。
-
-    def get_cach_flow(self, prop_access=False):
-        """キャッシュフローを取得します。
-        パラメータ泊、全年数に渡る支出と収入とその合計を算出します。
-        ただし、カテゴリーは口座IDの形式で表示されますので、
-        口座名を知るためにはaccounts.jsonと照会しなれけばなりません。。
-
-        .
-        └── cash_flow [].
-              ├── month <string>
-              ├── amount_in <float>
-              ├── amount_out <float>
-              ├── amount_total <float>
-              └── categories
-                  ├── 88 <float>
-                  ├── 89 <float>
-                  ├── 90 <float>
-                  ├── 184186 <float>
-                  ├── 195532 <float>
-                  ├── 11 <float>
-                  ├── 12 <float>
-                  ├── 21 <float>
-                  ├── 27 <float>
-                  ├── 34 <float>
-                  ├── 35 <float>
-                  ├── 40 <float>
-                  ├── 46 <float>
-                  ├── 50 <float>
-                  ├── 52 <float>
-                  ├── 63 <float>
-                  ├── 71 <float>
-                  ├── 78 <float>
-                  ├── 160258 <float>
-                  └── 96 <float>
-        """
-        return Moneytree._get_json("/web/presenter/cash-flow.json",
-                                   prop_access=prop_access)  # パラメータなし
+    # def get_cach_flow(self, prop_access=False):
 
     def get_spending(self,
                      start_date: str,
@@ -440,17 +467,6 @@ class Moneytree:
             spending["category_totals"][i] = new_category
         return spending
 
-    @staticmethod
-    def pprint(obj):
-        """JSONインデント表示
-
-        mt.get_account_balances().pprint()
-        のようにしたい
-
-        そのためには
-        """
-        print(json.dumps(obj, indent=4, ensure_ascii=False))
-
 
 if __name__ == "__main__":
     # json_data = get_transaction(
@@ -465,6 +481,13 @@ if __name__ == "__main__":
     with open("./bearer_token", mode="r", encoding="utf-8") as f:
         token = f.readline().replace("\n", "", -1).replace("Bearer ", "")
 
-    mt = Moneytree(token)
-    account_balances = mt.get_account_balances()
-    print(json.dumps(account_balances, indent=4, ensure_ascii=False))
+    money = Moneytree(token)
+    cachflow = money.get(API.CASHFLOW)
+    # nomal JSON
+    print(cachflow.json())
+
+    # indented JSON
+    print(cachflow.indented_json())
+
+    # object JSON
+    print(cachflow.object())
