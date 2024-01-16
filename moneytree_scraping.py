@@ -15,7 +15,9 @@ from moneytree_scraping import Moneytree
 1．開発者ツールをF12とかで開き、[ネットワーク]のタブを開く
 1. ブラウザでmoneytreeの適当なページを開く(要ログイン)
 1. 開発者ツールの[フィルター]に[transaction]と打ち込む
-1. HeadersタブのRequest Headersの項目の中に、キーが[ Authorization :] で、Bearerから始まる文字列がある。これがBearerトークンで、認証に必要。
+1. HeadersタブのRequest Headersの項目の中に、
+    キーが[ Authorization :] で、Bearerから始まる文字列がある。
+    これがBearerトークンで、認証に必要。
 
 ## トークンのセット
 token = "Bearer以降の文字列コピペ。スペース入れない。"
@@ -181,10 +183,10 @@ class API(Enum):
     Params
     ---
     params = {
+        "start_date": "01/01/2020",
         "end_date": "12/31/2022",
         "group_by": "monthly_period",
         "locale":"ja",
-        "start_date": "01/01/2020",
     }
 
     Returns
@@ -323,13 +325,41 @@ class API(Enum):
     どこの銀行のなんの口座名かわかるようにnicknameを付ける必要がある。
     """
 
+    CATEGORY = "/presenter/categories.json"
+    """カテゴリテーブルを取得します。
+    カテゴリIDとカテゴリ名の照会に使います。
+
+    .
+    └── categories [].
+          ├── id <int>
+          ├── parent_id <int>
+          ├── guest_id <int>
+          ├── category_type <string>
+          ├── updated_at <string>
+          ├── created_at <string>
+          ├── entity_key <null>
+          ├── name <string>
+          ├── icon_key <string>
+          ├── parent
+          │   └── id <int>
+          └── guest
+              └── id <int>
+
+    id, nameでカテゴリの照会ができます。
+    """
+
+    # AVAILABILITY =
+    # """不明
+    # url = "https://app.getmoneytree.com/static/data-availability.json"
+    # """
+
 
 class Response(requests.Response):
     """Custom Response Class
 
     # Usage:
         resp = requests.get(url=cls.origin + api.value,
-                            headers=cls.__headers,
+                            headers=cls._header,
                             timeout=400,
                             params=params)
         custom_resp = Response()
@@ -348,14 +378,19 @@ class Response(requests.Response):
 class Moneytree:
     """Moneytree API"""
     origin = "https://jp-api.getmoneytree.com/v8/api"
-    __headers = {"Content-Type": "application/json"}
+    _header = {"Content-Type": "application/json"}
 
     def __init__(self, token: Optional[str] = None):
         # self.token = token
         if token is None:
             token = input("Input Bearer token (Without 'Bearer ' string): ")\
                 .replace("\n", "").replace("Bearer ", "")  # 不要な文字列削除
-        Moneytree.__headers.update({"Authorization": f"Bearer {token}"})
+        Moneytree._header.update({"Authorization": f"Bearer {token}"})
+        # self.category_map = self.inquiry_category()
+        self.categories = self.get(API.CATEGORY).object().categories
+        self.category_table = {c.id: c.name for c in self.categories}
+        self.accounts = self.get(API.ACCOUNT).object().accounts
+        self.account_table = {a.id: a.nickname for a in self.accounts}
 
     @classmethod
     def get(cls,
@@ -372,14 +407,14 @@ class Moneytree:
                 "group_by": group_by,
             })
 
-        if api == API.TRANSACTIONS:
+        elif api == API.TRANSACTIONS:
             params.update({
                 "start_date": params["start_date"],
                 "end_date": params["end_date"],
                 "per_page": per_page,
             })
 
-        if api == API.ACCOUNT_BALANCES:
+        elif api == API.ACCOUNT_BALANCES:
             # アカウントIDは口座一つ一つに対応する7桁くらいの数字
             # account_ids はアカウントIDのリスト
             accounts_keys = [
@@ -389,7 +424,7 @@ class Moneytree:
 
         # GET data from moneytree API
         resp = requests.get(url=cls.origin + api.value,
-                            headers=cls.__headers,
+                            headers=cls._header,
                             timeout=400,
                             params=params)
         if resp.status_code == 401:
@@ -403,47 +438,16 @@ class Moneytree:
         custom_resp.__dict__.update(resp.__dict__)
         return custom_resp
 
-    def get_categories(self, prop_access=False):
-        """カテゴリテーブルを取得します。
-        カテゴリIDとカテゴリ名の照会に使います。
-
-        .
-        └── categories [].
-              ├── id <int>
-              ├── parent_id <int>
-              ├── guest_id <int>
-              ├── category_type <string>
-              ├── updated_at <string>
-              ├── created_at <string>
-              ├── entity_key <null>
-              ├── name <string>
-              ├── icon_key <string>
-              ├── parent
-              │   └── id <int>
-              └── guest
-                  └── id <int>
-
-        id, nameでカテゴリの照会ができます。
-        """
-        return Moneytree._get_json("/presenter/categories.json",
-                                   prop_access=prop_access)
-
-    def get_data_availability(self, prop_access=False, **params):
-        """不明
-        url = "https://app.getmoneytree.com/static/data-availability.json"
-        """
-        pass
-
-    def inquiry_category(self, spending_dict: dict[str,
-                                                   float]) -> dict[str, float]:
-        """ カテゴリIDをカテゴリ名に変換します。 """
-        categories = self.get_categories()["categories"]
-        category_table = {c["id"]: c["name"] for c in categories}
-        new_category = {
-            category_table[int(k)]: v
-            for k, v in spending_dict.items()
-        }
-        return new_category
+    # def inquiry_category(self, spending_dict: dict[str,
+    #                                                float]) -> dict[str, float]:
+    #     """ カテゴリIDをカテゴリ名に変換します。 """
+    #     categories = self.get_categories()["categories"]
+    #     category_table = {c["id"]: c["name"] for c in categories}
+    #     new_category = {
+    #         category_table[int(k)]: v
+    #         for k, v in spending_dict.items()
+    #     }
+    #     return new_category
 
     def rename_category(self, spending):
         """get_spending()で取得できるJSONのcategory idをnameに変換します。
