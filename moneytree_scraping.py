@@ -129,6 +129,7 @@ class API(Enum):
                 ├── currency <string>
     このあたりで口座残高を取得できそうです。
     """
+
     CASHFLOW = "/web/presenter/cash-flow.json"
     """キャッシュフローを取得します。
     パラメータ泊、全年数に渡る支出と収入とその合計を算出します。
@@ -162,6 +163,71 @@ class API(Enum):
               ├── 78 <float>
               ├── 160258 <float>
               └── 96 <float>
+    """
+
+    SPENDING = "/web/presenter/spending.json"
+    """支出を取得します。
+    日付形式はMM/DD/YYYYあるいはYYYY-MM-DD
+
+    ```usage
+    from datetime import datetime
+    get_spending(
+        start_date=datetime(2022, 1, 1).date().isoformat(),
+        end_date=datetime(2022, 12, 31).date().isoformat(),
+        group_by="monthly_period"  # or "yearly_period"
+    )
+    ```
+
+    Params
+    ---
+    params = {
+        "end_date": "12/31/2022",
+        "group_by": "monthly_period",
+        "locale":"ja",
+        "start_date": "01/01/2020",
+    }
+
+    Returns
+    ---
+    .
+    ├── start_date <string>
+    ├── end_date <string>
+    └── category_totals [].
+          ├── start_date <string>
+          ├── end_date <string>
+          ├── total <float>
+          └── categories
+              ├── 9 <float>
+              ├── 11 <float>
+              ├── 12 <float>
+              ├── 14 <float>
+              ├── 15 <float>
+              ├── 17 <float>
+              ├── 24 <float>
+              ├── 25 <float>
+              ├── 27 <float>
+              ├── 28 <float>
+              ├── 31 <float>
+              ├── 38 <float>
+              ├── 40 <float>
+              ├── 41 <float>
+              ├── 42 <float>
+              ├── 44 <float>
+              ├── 46 <float>
+              ├── 47 <float>
+              ├── 49 <float>
+              ├── 52 <float>
+              ├── 53 <float>
+              ├── 71 <float>
+              ├── 73 <float>
+              ├── 75 <float>
+              ├── 76 <float>
+              ├── 77 <float>
+              └── 95 <float>
+
+    カテゴリーはカテゴリIDが表示されているので、
+    別途カテゴリーテーブルを参照する
+    `get_categories()`により照会してください。
     """
 
 
@@ -201,6 +267,19 @@ class Moneytree:
     @classmethod
     def get(cls, api: API, **params) -> Response:
         """get data from moneytree API"""
+        # REQUIRE params
+        if api == API.SPENDING:
+            params.update({
+                "start_date": params["start_date"],
+                "end_date": params["end_date"],
+            })
+            try:
+                if not params["group_by"]:
+                    params["group_by"] = "monthly_period"
+            except KeyError:
+                params["group_by"] = "monthly_period"
+
+        # GET data from moneytree API
         resp = requests.get(url=cls.origin + api.value,
                             headers=cls.__headers,
                             timeout=400,
@@ -217,84 +296,6 @@ class Moneytree:
         return custom_resp
 
     # def get_cach_flow(self, prop_access=False):
-
-    def get_spending(self,
-                     start_date: str,
-                     end_date: str,
-                     group_by: str = "monthly_period",
-                     prop_access=False,
-                     **params):
-        """支出を取得します。
-        日付形式はMM/DD/YYYYあるいはYYYY-MM-DD
-
-        ```usage
-        from datetime import datetime
-        get_spending(
-            start_date=datetime(2022, 1, 1).date().isoformat(),
-            end_date=datetime(2022, 12, 31).date().isoformat(),
-            group_by="monthly_period"  # or "yearly_period"
-        )
-        ```
-
-        Params
-        ---
-        params = {
-            "end_date": "12/31/2022",
-            "group_by": "monthly_period",
-            "locale":"ja",
-            "start_date": "01/01/2020",
-        }
-
-        Returns
-        ---
-        .
-        ├── start_date <string>
-        ├── end_date <string>
-        └── category_totals [].
-              ├── start_date <string>
-              ├── end_date <string>
-              ├── total <float>
-              └── categories
-                  ├── 9 <float>
-                  ├── 11 <float>
-                  ├── 12 <float>
-                  ├── 14 <float>
-                  ├── 15 <float>
-                  ├── 17 <float>
-                  ├── 24 <float>
-                  ├── 25 <float>
-                  ├── 27 <float>
-                  ├── 28 <float>
-                  ├── 31 <float>
-                  ├── 38 <float>
-                  ├── 40 <float>
-                  ├── 41 <float>
-                  ├── 42 <float>
-                  ├── 44 <float>
-                  ├── 46 <float>
-                  ├── 47 <float>
-                  ├── 49 <float>
-                  ├── 52 <float>
-                  ├── 53 <float>
-                  ├── 71 <float>
-                  ├── 73 <float>
-                  ├── 75 <float>
-                  ├── 76 <float>
-                  ├── 77 <float>
-                  └── 95 <float>
-
-        カテゴリーはカテゴリIDが表示されているので、
-        別途カテゴリーテーブルを参照する
-        `get_categories()`により照会してください。
-        """
-        params.update({
-            "start_date": start_date,
-            "end_date": end_date,
-            "group_by": group_by,
-        })
-        return Moneytree._get_json("/web/presenter/spending.json",
-                                   prop_access=prop_access,
-                                   **params)
 
     def get_transaction(self, prop_access=False, **params):
         """トランザクション　入出金を取得します。
@@ -482,12 +483,12 @@ if __name__ == "__main__":
         token = f.readline().replace("\n", "", -1).replace("Bearer ", "")
 
     money = Moneytree(token)
-    cachflow = money.get(API.CASHFLOW)
+    cashflow = money.get(API.CASHFLOW)
     # nomal JSON
-    print(cachflow.json())
+    print(cashflow.json())
 
     # indented JSON
-    print(cachflow.indented_json())
+    print(cashflow.indented_json())
 
     # object JSON
-    print(cachflow.object())
+    print(cashflow.object())
