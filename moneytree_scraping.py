@@ -230,6 +230,47 @@ class API(Enum):
     `get_categories()`により照会してください。
     """
 
+    TRANSACTIONS = "/web/presenter/transactions.json"
+    """トランザクション　入出金を取得します。
+
+    ペイロード例
+    params = {
+        end_date: 06/30/2023
+        exclude_corporate: true
+        locale: ja
+        show_spending_transactions: true
+        show_transactions_details: true
+        start_date: 06/01/2023
+        transaction: {}
+    }
+
+    .
+    ├── transactions [].
+    │     ├── id <int>
+    │     ├── amount <float>
+    │     ├── date <string>
+    │     ├── description_guest <null>
+    │     ├── description_pretty <string>
+    │     ├── description_raw <string>
+    │     ├── raw_transaction_id <int>
+    │     ├── created_at <string>
+    │     ├── updated_at <string>
+    │     ├── expense_type <int>
+    │     ├── predicted_expense_type <int>
+    │     ├── category_id <int>
+    │     ├── account_id <int>
+    │     ├── claim_id <null>
+    │     ├── attachments []null
+    │     ├── receipts []null
+    │     └── attributes
+    │         └── installment_count <int>
+    └── transactions_details
+        ├── page <int>
+        ├── per_page <int>
+        ├── start_date <string>
+        └── end_date <string>
+    """
+
 
 class Response(requests.Response):
     """Custom Response Class
@@ -249,7 +290,7 @@ class Response(requests.Response):
 
     def object(self):
         """property accessable object"""
-        return SimpleNamespace(**self.json())
+        return self.json(object_hook=lambda x: SimpleNamespace(**x))
 
 
 class Moneytree:
@@ -265,19 +306,26 @@ class Moneytree:
         Moneytree.__headers.update({"Authorization": f"Bearer {token}"})
 
     @classmethod
-    def get(cls, api: API, **params) -> Response:
+    def get(cls,
+            api: API,
+            group_by="monthly_period",
+            per_page=500,
+            **params) -> Response:
         """get data from moneytree API"""
         # REQUIRE params
         if api == API.SPENDING:
             params.update({
                 "start_date": params["start_date"],
                 "end_date": params["end_date"],
+                "group_by": group_by,
             })
-            try:
-                if not params["group_by"]:
-                    params["group_by"] = "monthly_period"
-            except KeyError:
-                params["group_by"] = "monthly_period"
+
+        if api == API.TRANSACTIONS:
+            params.update({
+                "start_date": params["start_date"],
+                "end_date": params["end_date"],
+                "per_page": per_page,
+            })
 
         # GET data from moneytree API
         resp = requests.get(url=cls.origin + api.value,
@@ -294,54 +342,6 @@ class Moneytree:
         custom_resp = Response()
         custom_resp.__dict__.update(resp.__dict__)
         return custom_resp
-
-    # def get_cach_flow(self, prop_access=False):
-
-    def get_transaction(self, prop_access=False, **params):
-        """トランザクション　入出金を取得します。
-
-        ペイロード例
-        params = {
-            end_date: 06/30/2023
-            exclude_corporate: true
-            locale: ja
-            show_spending_transactions: true
-            show_transactions_details: true
-            start_date: 06/01/2023
-            transaction: {}
-        }
-
-        .
-        ├── transactions [].
-        │     ├── id <int>
-        │     ├── amount <float>
-        │     ├── date <string>
-        │     ├── description_guest <null>
-        │     ├── description_pretty <string>
-        │     ├── description_raw <string>
-        │     ├── raw_transaction_id <int>
-        │     ├── created_at <string>
-        │     ├── updated_at <string>
-        │     ├── expense_type <int>
-        │     ├── predicted_expense_type <int>
-        │     ├── category_id <int>
-        │     ├── account_id <int>
-        │     ├── claim_id <null>
-        │     ├── attachments []null
-        │     ├── receipts []null
-        │     └── attributes
-        │         └── installment_count <int>
-        └── transactions_details
-            ├── page <int>
-            ├── per_page <int>
-            ├── start_date <string>
-            └── end_date <string>
-        """
-        if "per_page" not in params:
-            params["per_page"] = 500  # 500より大きい数値を入れるとエラー
-        return Moneytree._get_json("/web/presenter/transactions.json",
-                                   prop_access=prop_access,
-                                   **params)
 
     def get_account_balances(self, prop_access=False, **params):
         """口座の残高を時系列で取得します。
