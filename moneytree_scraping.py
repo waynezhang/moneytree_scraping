@@ -271,6 +271,58 @@ class API(Enum):
         └── end_date <string>
     """
 
+    ACCOUNT_BALANCES = "/web/presenter/account_balances.json"
+    """口座の残高を時系列で取得します。
+
+    .
+    └── account_balances [].
+          ├── account_id <string>
+          ├── account_type <string>
+          ├── currency <string>
+          ├── years []int
+          └── monthly_balances [].
+                ├── month <string>
+                ├── balance <float>
+                └── balance_in_base <null>
+
+    """
+
+    ACCOUNT = "/accounts.json"
+    """口座テーブルを取得します。
+    主に口座IDと口座名の照会に使います。
+    アカウントのリストを取得します。
+    アカウントIDは口座一つ一つに対応する7桁くらいの数字です。
+
+    .
+    └── accounts [].
+          ├── id <int>
+          ├── guest_id <int>
+          ├── nickname <string>
+          ├── currency <string>
+          ├── credential_id <int>
+          ├── account_type <string>
+          ├── institution_account_number <string>
+          ├── institution_account_name <string>
+          ├── branch_name <null>
+          ├── status <string>
+          ├── last_success_at <string>
+          ├── group <string>
+          ├── detail_type <string>
+          ├── sub_type <string>
+          ├── current_balance <float>
+          ├── current_balance_in_base <float>
+          ├── current_unclosed_balance <float>
+          ├── current_closed_balance <null>
+          └── current_revolving_balance <float>
+
+    id, nicknameのペアで口座名の特定ができる。
+    institution_account_name は正式名称が出るようだが、
+    複数の銀行の口座を持っていると、
+    口座名がみんな"普通"になってしまうので、区別がつかなくなる。
+    institutionは公共施設の意味。
+    どこの銀行のなんの口座名かわかるようにnicknameを付ける必要がある。
+    """
+
 
 class Response(requests.Response):
     """Custom Response Class
@@ -327,6 +379,14 @@ class Moneytree:
                 "per_page": per_page,
             })
 
+        if api == API.ACCOUNT_BALANCES:
+            # アカウントIDは口座一つ一つに対応する7桁くらいの数字
+            # account_ids はアカウントIDのリスト
+            accounts_keys = [
+                a.id for a in cls.get(API.ACCOUNT).object().accounts
+            ]
+            params.update({"account_ids[]": accounts_keys})
+
         # GET data from moneytree API
         resp = requests.get(url=cls.origin + api.value,
                             headers=cls.__headers,
@@ -342,68 +402,6 @@ class Moneytree:
         custom_resp = Response()
         custom_resp.__dict__.update(resp.__dict__)
         return custom_resp
-
-    def get_account_balances(self, prop_access=False, **params):
-        """口座の残高を時系列で取得します。
-
-        .
-        └── account_balances [].
-              ├── account_id <string>
-              ├── account_type <string>
-              ├── currency <string>
-              ├── years []int
-              └── monthly_balances [].
-                    ├── month <string>
-                    ├── balance <float>
-                    └── balance_in_base <null>
-
-        """
-        # アカウントIDは口座一つ一つに対応する7桁くらいの数字
-        # account_ids はアカウントIDのリスト
-        accounts_keys = [
-            a.id for a in self.get_accounts(prop_access=True).accounts
-        ]
-        params.update({"account_ids[]": accounts_keys})
-        return Moneytree._get_json("/web/presenter/account_balances.json",
-                                   prop_access=prop_access,
-                                   **params)
-
-    def get_accounts(self, prop_access=False):
-        """口座テーブルを取得します。
-        主に口座IDと口座名の照会に使います。
-        アカウントのリストを取得します。
-
-        .
-        └── accounts [].
-              ├── id <int>
-              ├── guest_id <int>
-              ├── nickname <string>
-              ├── currency <string>
-              ├── credential_id <int>
-              ├── account_type <string>
-              ├── institution_account_number <string>
-              ├── institution_account_name <string>
-              ├── branch_name <null>
-              ├── status <string>
-              ├── last_success_at <string>
-              ├── group <string>
-              ├── detail_type <string>
-              ├── sub_type <string>
-              ├── current_balance <float>
-              ├── current_balance_in_base <float>
-              ├── current_unclosed_balance <float>
-              ├── current_closed_balance <null>
-              └── current_revolving_balance <float>
-
-        id, nicknameのペアで口座名の特定ができる。
-        institution_account_name は正式名称が出るようだが、
-        複数の銀行の口座を持っていると、
-        口座名がみんな"普通"になってしまうので、区別がつかなくなる。
-        institutionは公共施設の意味。
-        どこの銀行のなんの口座名かわかるようにnicknameを付ける必要がある。
-        """
-        # アカウントIDは口座一つ一つに対応する7桁くらいの数字
-        return Moneytree._get_json("/accounts.json", prop_access=prop_access)
 
     def get_categories(self, prop_access=False):
         """カテゴリテーブルを取得します。
