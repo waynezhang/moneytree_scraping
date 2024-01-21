@@ -366,13 +366,17 @@ class Response(requests.Response):
     """Custom Response Class
 
     # Usage:
-        resp = requests.get(url=cls.origin + api.value,
-                            headers=cls._header,
+        resp = requests.get(url=self.origin + api.value,
+                            headers=self._header,
                             timeout=400,
                             params=params)
         custom_resp = Response()
         custom_resp.__dict__.update(resp.__dict__)
     """
+
+    def __init__(self, resp: requests.Response):
+        super().__init__()
+        self.__dict__.update(resp.__dict__)
 
     def indented_json(self):
         """tab indent JSON"""
@@ -400,8 +404,7 @@ class Moneytree:
         self.accounts = self.get(API.ACCOUNT).object().accounts
         self.account_table = {a.id: a.nickname for a in self.accounts}
 
-    @classmethod
-    def get(cls,
+    def get(self,
             api: API,
             group_by="monthly_period",
             per_page=500,
@@ -425,14 +428,12 @@ class Moneytree:
         elif api == API.ACCOUNT_BALANCES:
             # アカウントIDは口座一つ一つに対応する7桁くらいの数字
             # account_ids はアカウントIDのリスト
-            accounts_keys = [
-                a.id for a in cls.get(API.ACCOUNT).object().accounts
-            ]
+            accounts_keys = [a.id for a in self.accounts]
             params.update({"account_ids[]": accounts_keys})
 
         # GET data from moneytree API
-        resp = requests.get(url=cls.origin + api.value,
-                            headers=cls._header,
+        resp = requests.get(url=self.origin + api.value,
+                            headers=self._header,
                             timeout=400,
                             params=params)
         if resp.status_code == 401:
@@ -442,8 +443,7 @@ class Moneytree:
         #     return resp.json(object_hook=lambda x: SimpleNamespace(**x))
 
         # success response
-        custom_resp = Response()
-        custom_resp.__dict__.update(resp.__dict__)
+        custom_resp = Response(resp)
         return custom_resp
 
     # def inquiry_category(self, spending_dict: dict[str,
