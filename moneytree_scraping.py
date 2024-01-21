@@ -53,6 +53,8 @@ from types import SimpleNamespace
 from typing import Optional
 from enum import Enum
 import requests
+import aiohttp
+import asyncio
 
 
 class API(Enum):
@@ -392,23 +394,23 @@ class Moneytree:
     origin = "https://jp-api.getmoneytree.com/v8/api"
     _header = {"Content-Type": "application/json"}
 
-    def __init__(self, token: Optional[str] = None):
+    async def __init__(self, token: Optional[str] = None):
         # self.token = token
         if token is None:
             token = input("Input Bearer token (Without 'Bearer ' string): ")\
                 .replace("\n", "").replace("Bearer ", "")  # 不要な文字列削除
         Moneytree._header.update({"Authorization": f"Bearer {token}"})
         # self.category_map = self.inquiry_category()
-        self.categories = self.get(API.CATEGORY).object().categories
+        self.categories = await self.get(API.CATEGORY).object().categories
         self.category_table = {c.id: c.name for c in self.categories}
-        self.accounts = self.get(API.ACCOUNT).object().accounts
+        self.accounts = await self.get(API.ACCOUNT).object().accounts
         self.account_table = {a.id: a.nickname for a in self.accounts}
 
-    def get(self,
-            api: API,
-            group_by="monthly_period",
-            per_page=500,
-            **params) -> Response:
+    async def get(self,
+                  api: API,
+                  group_by="monthly_period",
+                  per_page=500,
+                  **params) -> Response:
         """get data from moneytree API"""
         # REQUIRE params
         if api == API.SPENDING:
@@ -432,19 +434,22 @@ class Moneytree:
             params.update({"account_ids[]": accounts_keys})
 
         # GET data from moneytree API
-        resp = requests.get(url=self.origin + api.value,
-                            headers=self._header,
-                            timeout=400,
-                            params=params)
-        if resp.status_code == 401:
-            raise requests.HTTPError("tokenの有効期限が切れました。Bearerトークンを再設定してください。")
-        resp.raise_for_status()  # status_code 200番台以外のときにエラー
-        # if prop_access:
-        #     return resp.json(object_hook=lambda x: SimpleNamespace(**x))
+        async with aiohttp.ClientSession() as session:
+            resp = await session.get(url=self.origin + api.value,
+                                     headers=self._header,
+                                     timeout=400,
+                                     params=params)
+            if resp.status == 401:
+                raise aiohttp.ClientResponseError(
+                    status=resp.status,
+                    message="tokenの有効期限が切れました。Bearerトークンを再設定してください。")
+            resp.raise_for_status()  # status_code 200番台以外のときにエラー
+            # if prop_access:
+            #     return resp.json(object_hook=lambda x: SimpleNamespace(**x))
 
-        # success response
-        custom_resp = Response(resp)
-        return custom_resp
+            # success response
+            custom_resp = Response(await resp.text())
+            return custom_resp
 
     # def inquiry_category(self, spending_dict: dict[str,
     #                                                float]) -> dict[str, float]:
@@ -479,7 +484,7 @@ class Moneytree:
         return spending
 
 
-if __name__ == "__main__":
+async def main():
     # json_data = get_transaction(
     #     end_date="06/30/2023",
     #     start_date="06/01/2023",
@@ -493,7 +498,7 @@ if __name__ == "__main__":
         token = f.readline().replace("\n", "", -1).replace("Bearer ", "")
 
     money = Moneytree(token)
-    cashflow = money.get(API.CASHFLOW)
+    cashflow = await money.get(API.CASHFLOW)
     # nomal JSON
     print(cashflow.json())
 
@@ -502,3 +507,8 @@ if __name__ == "__main__":
 
     # object JSON
     print(cashflow.object())
+
+
+if __name__ == "__main__":
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())
