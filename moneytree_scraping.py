@@ -56,6 +56,14 @@ import requests
 
 
 class API(Enum):
+    """Moneytree API
+    ACCOUNT = "/accounts.json"
+    ACCOUNT_BALANCES = "/web/presenter/account_balances.json"
+    CATEGORY = "/presenter/categories.json"
+    SNAPSHOT = "/web/presenter/guests/data_snapshot.json"
+    SPENDING = "/web/presenter/spending.json"
+    TRANSACTIONS = "/web/presenter/transactions.json"
+    """
     # ペイロード(パラメータ)なし
     # 強いて言えば locate=ja だけは指定されていました。
     SNAPSHOT = "/web/presenter/guests/data_snapshot.json"
