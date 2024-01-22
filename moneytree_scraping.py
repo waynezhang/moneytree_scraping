@@ -51,10 +51,10 @@ print(json.dumps(account_balances, indent=4, ensure_ascii=False))
 import json
 from types import SimpleNamespace
 from typing import Optional
+import asyncio
 from enum import Enum
 import requests
 import aiohttp
-import asyncio
 
 
 class API(Enum):
@@ -394,17 +394,24 @@ class Moneytree:
     origin = "https://jp-api.getmoneytree.com/v8/api"
     _header = {"Content-Type": "application/json"}
 
-    async def __init__(self, token: Optional[str] = None):
-        # self.token = token
+    def __init__(self, token: Optional[str] = None):
         if token is None:
             token = input("Input Bearer token (Without 'Bearer ' string): ")\
                 .replace("\n", "").replace("Bearer ", "")  # 不要な文字列削除
         Moneytree._header.update({"Authorization": f"Bearer {token}"})
-        # self.category_map = self.inquiry_category()
-        self.categories = await self.get(API.CATEGORY).object().categories
+        self.categories = []
+        self.category_table = {}
+        # self.accounts = []
+        # self.account_table = {}
+        asyncio.run(self.fetch_categories())
+
+    async def fetch_categories(self):
+        response = await self.get(API.CATEGORY)
+        self.categories = response.object().categories
         self.category_table = {c.id: c.name for c in self.categories}
-        self.accounts = await self.get(API.ACCOUNT).object().accounts
-        self.account_table = {a.id: a.nickname for a in self.accounts}
+
+        # self.accounts = self.get(API.ACCOUNT).object().accounts
+        # self.account_table = {a.id: a.nickname for a in self.accounts}
 
     async def get(self,
                   api: API,
@@ -433,14 +440,25 @@ class Moneytree:
             accounts_keys = [a.id for a in self.accounts]
             params.update({"account_ids[]": accounts_keys})
 
+        else:
+            params = None
+
         # GET data from moneytree API
         async with aiohttp.ClientSession() as session:
-            resp = await session.get(url=self.origin + api.value,
+            url = self.origin + api.value
+            resp = await session.get(url,
                                      headers=self._header,
                                      timeout=400,
                                      params=params)
             if resp.status == 401:
+                request_info = aiohttp.RequestInfo(
+                    url=url,
+                    method="GET",
+                    headers=self._header,
+                )
                 raise aiohttp.ClientResponseError(
+                    request_info=request_info,
+                    history=(),
                     status=resp.status,
                     message="tokenの有効期限が切れました。Bearerトークンを再設定してください。")
             resp.raise_for_status()  # status_code 200番台以外のときにエラー
