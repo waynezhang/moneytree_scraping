@@ -410,6 +410,13 @@ class Moneytree:
         """get data from moneytree API"""
         # REQUIRE params
         if api == API.SPENDING:
+            if any([
+                    not params["start_date"],
+                    not params["end_date"],
+                    not group_by,
+            ]):
+                raise KeyError(
+                    "needs parameter 'start_date', 'end_date' and 'group_by'")
             params.update({
                 "start_date": params["start_date"],
                 "end_date": params["end_date"],
@@ -417,6 +424,13 @@ class Moneytree:
             })
 
         elif api == API.TRANSACTIONS:
+            if any([
+                    not params["start_date"],
+                    not params["end_date"],
+                    not per_page,
+            ]):
+                raise KeyError(
+                    "needs parameter 'start_date', 'end_date' and 'per_page'")
             params.update({
                 "start_date": params["start_date"],
                 "end_date": params["end_date"],
