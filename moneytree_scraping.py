@@ -51,10 +51,8 @@ print(json.dumps(account_balances, indent=4, ensure_ascii=False))
 import json
 from types import SimpleNamespace
 from typing import Optional
-import asyncio
 from enum import Enum
 import requests
-import aiohttp
 
 
 class API(Enum):
@@ -399,25 +397,16 @@ class Moneytree:
             token = input("Input Bearer token (Without 'Bearer ' string): ")\
                 .replace("\n", "").replace("Bearer ", "")  # 不要な文字列削除
         Moneytree._header.update({"Authorization": f"Bearer {token}"})
-        self.categories = []
-        self.category_table = {}
-        # self.accounts = []
-        # self.account_table = {}
-        asyncio.run(self.fetch_categories())
-
-    async def fetch_categories(self):
-        response = await self.get(API.CATEGORY)
-        self.categories = response.object().categories
+        self.categories = self.get(API.CATEGORY).object().categories
         self.category_table = {c.id: c.name for c in self.categories}
+        self.accounts = self.get(API.ACCOUNT).object().accounts
+        self.account_table = {a.id: a.nickname for a in self.accounts}
 
-        # self.accounts = self.get(API.ACCOUNT).object().accounts
-        # self.account_table = {a.id: a.nickname for a in self.accounts}
-
-    async def get(self,
-                  api: API,
-                  group_by="monthly_period",
-                  per_page=500,
-                  **params) -> Response:
+    def get(self,
+            api: API,
+            group_by="monthly_period",
+            per_page=500,
+            **params) -> Response:
         """get data from moneytree API"""
         # REQUIRE params
         if api == API.SPENDING:
@@ -440,34 +429,20 @@ class Moneytree:
             accounts_keys = [a.id for a in self.accounts]
             params.update({"account_ids[]": accounts_keys})
 
-        else:
-            params = None
-
         # GET data from moneytree API
-        async with aiohttp.ClientSession() as session:
-            url = self.origin + api.value
-            resp = await session.get(url,
-                                     headers=self._header,
-                                     timeout=400,
-                                     params=params)
-            if resp.status == 401:
-                request_info = aiohttp.RequestInfo(
-                    url=url,
-                    method="GET",
-                    headers=self._header,
-                )
-                raise aiohttp.ClientResponseError(
-                    request_info=request_info,
-                    history=(),
-                    status=resp.status,
-                    message="tokenの有効期限が切れました。Bearerトークンを再設定してください。")
-            resp.raise_for_status()  # status_code 200番台以外のときにエラー
-            # if prop_access:
-            #     return resp.json(object_hook=lambda x: SimpleNamespace(**x))
+        resp = requests.get(url=self.origin + api.value,
+                            headers=self._header,
+                            timeout=400,
+                            params=params)
+        if resp.status_code == 401:
+            raise requests.HTTPError("tokenの有効期限が切れました。Bearerトークンを再設定してください。")
+        resp.raise_for_status()  # status_code 200番台以外のときにエラー
+        # if prop_access:
+        #     return resp.json(object_hook=lambda x: SimpleNamespace(**x))
 
-            # success response
-            custom_resp = Response(await resp.text())
-            return custom_resp
+        # success response
+        custom_resp = Response(resp)
+        return custom_resp
 
     # def inquiry_category(self, spending_dict: dict[str,
     #                                                float]) -> dict[str, float]:
@@ -502,7 +477,7 @@ class Moneytree:
         return spending
 
 
-async def main():
+if __name__ == "__main__":
     # json_data = get_transaction(
     #     end_date="06/30/2023",
     #     start_date="06/01/2023",
@@ -516,7 +491,7 @@ async def main():
         token = f.readline().replace("\n", "", -1).replace("Bearer ", "")
 
     money = Moneytree(token)
-    cashflow = await money.get(API.CASHFLOW)
+    cashflow = money.get(API.CASHFLOW)
     # nomal JSON
     print(cashflow.json())
 
@@ -525,8 +500,3 @@ async def main():
 
     # object JSON
     print(cashflow.object())
-
-
-if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(main())
