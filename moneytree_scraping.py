@@ -411,8 +411,8 @@ class Moneytree:
         # REQUIRE params
         if api == API.SPENDING:
             if any([
-                    not params["start_date"],
-                    not params["end_date"],
+                    not params.get("start_date"),
+                    not params.get("end_date"),
                     not group_by,
             ]):
                 raise KeyError(
@@ -425,8 +425,8 @@ class Moneytree:
 
         elif api == API.TRANSACTIONS:
             if any([
-                    not params["start_date"],
-                    not params["end_date"],
+                    not params.get("start_date"),
+                    not params.get("end_date"),
                     not per_page,
             ]):
                 raise KeyError(
