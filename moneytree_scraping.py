@@ -393,12 +393,10 @@ class Moneytree:
     _header = {"Content-Type": "application/json"}
 
     def __init__(self, token: Optional[str] = None):
-        # self.token = token
         if token is None:
             token = input("Input Bearer token (Without 'Bearer ' string): ")\
                 .replace("\n", "").replace("Bearer ", "")  # 不要な文字列削除
         Moneytree._header.update({"Authorization": f"Bearer {token}"})
-        # self.category_map = self.inquiry_category()
         self.categories = self.get(API.CATEGORY).object().categories
         self.category_table = {c.id: c.name for c in self.categories}
         self.accounts = self.get(API.ACCOUNT).object().accounts
@@ -412,6 +410,13 @@ class Moneytree:
         """get data from moneytree API"""
         # REQUIRE params
         if api == API.SPENDING:
+            if any([
+                    not params.get("start_date"),
+                    not params.get("end_date"),
+                    not group_by,
+            ]):
+                raise KeyError(
+                    "needs parameter 'start_date', 'end_date' and 'group_by'")
             params.update({
                 "start_date": params["start_date"],
                 "end_date": params["end_date"],
@@ -419,6 +424,13 @@ class Moneytree:
             })
 
         elif api == API.TRANSACTIONS:
+            if any([
+                    not params.get("start_date"),
+                    not params.get("end_date"),
+                    not per_page,
+            ]):
+                raise KeyError(
+                    "needs parameter 'start_date', 'end_date' and 'per_page'")
             params.update({
                 "start_date": params["start_date"],
                 "end_date": params["end_date"],
@@ -446,26 +458,15 @@ class Moneytree:
         custom_resp = Response(resp)
         return custom_resp
 
-    # def inquiry_category(self, spending_dict: dict[str,
-    #                                                float]) -> dict[str, float]:
-    #     """ カテゴリIDをカテゴリ名に変換します。 """
-    #     categories = self.get_categories()["categories"]
-    #     category_table = {c["id"]: c["name"] for c in categories}
-    #     new_category = {
-    #         category_table[int(k)]: v
-    #         for k, v in spending_dict.items()
-    #     }
-    #     return new_category
-
     def rename_category(self, spending):
         """get_spending()で取得できるJSONのcategory idをnameに変換します。
         usage:
-            spending = get_spending(
-                start_date="01/01/2023",
-                end_date="06/30/2023",
-                group_by="monthly_period",
-                )
-            renamed = rename_category(spending)
+            mt = Moneytree(token)
+            resp = mt.get(API.SPENDING,
+                            start_date="01/01/2023",
+                            end_date="12/31/2023")
+            data = mt.rename_category(resp.json())
+            df = pd.json_normalize(data["category_totals"])
 
         # dev
             spending.rename_category()
@@ -474,7 +475,13 @@ class Moneytree:
         そのためにはSpengingクラスを作るか。
         """
         for i, cat in enumerate(spending["category_totals"]):
-            new_category = self.inquiry_category(cat["categories"])
+            # 支出IDと支出名称の置換を
+            # spending["category_totals"]配列に対して行う
+            # パット見何をやっているか理解に苦しむ
+            new_category = {
+                self.category_table[int(k)]: v
+                for k, v in cat["categories"].items()
+            }
             spending["category_totals"][i] = new_category
         return spending
 
