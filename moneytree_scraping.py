@@ -479,6 +479,19 @@ class Moneytree:
         return spending
 
 
+def download(token: str):
+    """APIに登録されているキーをすべて実行して、
+    `API.name`.json というファイル名で保存する。
+    """
+    mt = Moneytree(token)
+    start_date, end_date = "2000-01-01", "2100-12-31"
+    for item in API.__members__.values():
+        data = mt.get(item, start_date=start_date, end_date=end_date).json()
+        print(data)
+        with open(f'{item.name.lower()}.json', 'w') as f:
+            json.dump(data, f)
+
+
 if __name__ == "__main__":
     # json_data = get_transaction(
     #     end_date="06/30/2023",
