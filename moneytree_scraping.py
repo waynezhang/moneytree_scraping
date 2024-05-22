@@ -49,10 +49,14 @@ print(json.dumps(account_balances, indent=4, ensure_ascii=False))
 * /data_snapshot.json: アカウントのサブスクタイプや最後の口座情報が乗っている
 """
 import json
+import sys
 from types import SimpleNamespace
 from typing import Optional
 from enum import Enum
 import requests
+import calendar
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
 
 
 class API(Enum):
@@ -61,8 +65,10 @@ class API(Enum):
     ACCOUNT_BALANCES = "/web/presenter/account_balances.json"
     CATEGORY = "/presenter/categories.json"
     SNAPSHOT = "/web/presenter/guests/data_snapshot.json"
+    CASHFLOW = "/web/presenter/cash-flow.json"
     SPENDING = "/web/presenter/spending.json"
     TRANSACTIONS = "/web/presenter/transactions.json"
+    NET_WORTH = "/web/presenter/guests/net_worth.json"
     """
     # ペイロード(パラメータ)なし
     # 強いて言えば locate=ja だけは指定されていました。
@@ -356,6 +362,38 @@ class API(Enum):
     id, nameでカテゴリの照会ができます。
     """
 
+    NET_WORTH = "/web/presenter/guests/net_worth.json"
+    """
+
+    Returns
+    .
+    └─ net_worth [].
+          ├── month <string>
+          ├── net_worth <int>
+          └── net_worth_in_base <int>
+    └─ account_type_balances [].
+          ├── bank
+          │   ├── month <string>
+          │   ├── net_worth <int>
+          │   └── net_worth_in_base <int>
+          ├── credit_card
+          │   ├── month <string>
+          │   ├── net_worth <int>
+          │   └── net_worth_in_base <int>
+          ├── stored_value
+          │   ├── month <string>
+          │   ├── net_worth <int>
+          │   └── net_worth_in_base <int>
+          ├── manual
+          │   ├── month <string>
+          │   ├── net_worth <int>
+          │   └── net_worth_in_base <int>
+          └── stock
+              ├── month <string>
+              ├── net_worth <int>
+              └── net_worth_in_base <int>
+    """
+
     # AVAILABILITY =
     # """不明
     # url = "https://app.getmoneytree.com/static/data-availability.json"
@@ -450,7 +488,7 @@ class Moneytree:
                             params=params)
         if resp.status_code == 401:
             raise requests.HTTPError("tokenの有効期限が切れました。Bearerトークンを再設定してください。")
-        resp.raise_for_status()  # status_code 200番台以外のときにエラー
+        resp.raise_for_status()
         # if prop_access:
         #     return resp.json(object_hook=lambda x: SimpleNamespace(**x))
 
@@ -486,17 +524,45 @@ class Moneytree:
         return spending
 
 
-def download(token: str):
+def download(token: str, months: int):
     """APIに登録されているキーをすべて実行して、
     `API.name`.json というファイル名で保存する。
     """
+    folder = "../moneytree_data/raw"
     mt = Moneytree(token)
-    start_date, end_date = "2000-01-01", "2100-12-31"
-    for item in API.__members__.values():
-        data = mt.get(item, start_date=start_date, end_date=end_date).json()
-        print(data)
-        with open(f'{item.name.lower()}.json', 'w') as f:
+    for item in [
+            API.ACCOUNT,
+            API.ACCOUNT_BALANCES,
+            API.CASHFLOW,
+            API.CATEGORY,
+            API.SNAPSHOT,
+            API.NET_WORTH,
+    ]:
+        data = mt.get(item).json()
+        with open(f'{folder}/{item.name.lower()}.json', 'w') as f:
             json.dump(data, f)
+
+    for item in [
+            API.SPENDING,
+            API.TRANSACTIONS,
+    ]:
+
+        current_date = datetime.now()
+        for i in range(months):
+            month_date = current_date - relativedelta(months=i)
+            year = month_date.year
+            month = month_date.month
+            last_day = calendar.monthrange(year, month)[1]
+
+            start_date = '%4d-%02d-01' % (year, month)
+            end_date = '%4d-%02d-%2d' % (year, month, last_day)
+
+            data = mt.get(item, start_date=start_date,
+                          end_date=end_date).json()
+            filename = '%s/%s-%04d-%02d.json' % (
+                folder, item.name.lower(), year, month)
+            with open(filename, 'w') as f:
+                json.dump(data, f)
 
 
 if __name__ == "__main__":
@@ -512,13 +578,18 @@ if __name__ == "__main__":
     with open("./bearer_token", mode="r", encoding="utf-8") as f:
         token = f.readline().replace("\n", "", -1).replace("Bearer ", "")
 
-    money = Moneytree(token)
-    cashflow = money.get(API.CASHFLOW)
+    args = sys.argv[1:]
+    if len(args) == 0:
+        download(token, 18)
+    else:
+        download(token, int(args[0]))
+    # money = Moneytree(token)
+    # cashflow = money.get(API.CASHFLOW)
     # nomal JSON
-    print(cashflow.json())
+    # print(cashflow.json())
 
     # indented JSON
-    print(cashflow.indented_json())
+    # print(cashflow.indented_json())
 
     # object JSON
-    print(cashflow.object())
+    # print(cashflow.object())
