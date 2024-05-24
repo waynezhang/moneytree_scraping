@@ -524,11 +524,10 @@ class Moneytree:
         return spending
 
 
-def download(token: str, months: int):
+def download(folder: str, token: str, months: int):
     """APIに登録されているキーをすべて実行して、
     `API.name`.json というファイル名で保存する。
     """
-    folder = "../moneytree_data/raw"
     mt = Moneytree(token)
     for item in [
             API.ACCOUNT,
@@ -579,17 +578,8 @@ if __name__ == "__main__":
         token = f.readline().replace("\n", "", -1).replace("Bearer ", "")
 
     args = sys.argv[1:]
-    if len(args) == 0:
-        download(token, 18)
+    folder = args[0]
+    if len(args) == 1:
+        download(folder, token, 18)
     else:
-        download(token, int(args[0]))
-    # money = Moneytree(token)
-    # cashflow = money.get(API.CASHFLOW)
-    # nomal JSON
-    # print(cashflow.json())
-
-    # indented JSON
-    # print(cashflow.indented_json())
-
-    # object JSON
-    # print(cashflow.object())
+        download(folder, token, int(args[1]))

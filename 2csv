@@ -1,0 +1,152 @@
+#!/bin/bash
+
+set -e
+
+if [ -z "$1" ]; then
+  echo "usage: 2csv folder"
+  exit
+fi
+
+ROOT_DIR="$1"
+DATA_DIR="$ROOT_DIR/raw"
+OUTPUT_DIR="$ROOT_DIR/out"
+DETAILS_DIR="$OUTPUT_DIR/details"
+
+# snapshot
+function snapshot() {
+  SNAPSHOT_FILE="$OUTPUT_DIR/snapshot.csv"
+  truncate -s 0 "$SNAPSHOT_FILE"
+  echo "root_account_id,account_id,institution_name,institution_account_name,institution_account_number,group,balance" > "$SNAPSHOT_FILE"
+
+  CREDENTIALS=$(cat "$DATA_DIR"/snapshot.json | yq e -o=j -I=0 '.guest.credentials[]')
+  while read line; do
+    echo $line | yq -P '. as $root | .accounts[] | "\($root.id),\(.id),\($root.institution_name),\(.nickname),\(.institution_account_number),\(.group),\(.current_balance)"' >> "$SNAPSHOT_FILE"
+  done <<< "$CREDENTIALS"
+}
+
+# account
+function account() {
+  cat "$DATA_DIR/account.json" | yq -P ".accounts" -o csv > "$OUTPUT_DIR/account.csv"
+}
+
+# account_balances
+function account_balances() {
+  ACCOUNT_IDS=$(cat "$DATA_DIR/account_balances.json" | yq -P ".account_balances[].account_id")
+  for aid in $ACCOUNT_IDS
+  do
+    fn="$DETAILS_DIR/account_balance-$aid.csv"
+    cat "$DATA_DIR/account_balances.json" | yq -P ".account_balances[] | select (.account_id == \"$aid\") | .monthly_balances" -o csv > $fn
+  done
+
+  ACCOUNT_BALANCES_FILE="$OUTPUT_DIR/account_balances.csv"
+  truncate -s 0 "$ACCOUNT_BALANCES_FILE"
+  HEAD="account_id,month,balance,balance_in_base"
+  echo "$HEAD" > "$ACCOUNT_BALANCES_FILE"
+  IN_FILES=$(ls "$DETAILS_DIR"/account_balance-*.csv)
+  for f in $IN_FILES
+  do
+    filename=$(basename "$f" .csv)
+    aid="${filename/#account_balance-}"
+    awk -v aid="$aid" 'BEGIN {OFS=""; FS=","} NR>1 {print aid","$0}' "$f" >> "$ACCOUNT_BALANCES_FILE"
+  done
+}
+
+# net_worth
+function net_worth() {
+  cat "$DATA_DIR/net_worth.json" | yq -P '.net_worth' -o csv > "$OUTPUT_DIR/net_worth.csv"
+  NET_WORTH_TYPES=$(cat "$DATA_DIR/net_worth.json" | yq -P ".account_type_balances | keys | .[]")
+  for nwt in $NET_WORTH_TYPES
+  do 
+    fn="$DETAILS_DIR/net_worth-$nwt.csv"
+    cat "$DATA_DIR/net_worth.json" | yq -P ".account_type_balances[] | select(key == \"$nwt\")" -o csv > "$fn"
+  done
+
+  NET_WORTH_BY_TYPES_FILE="$OUTPUT_DIR/net_worth_by_types.csv"
+  truncate -s 0 "$NET_WORTH_BY_TYPES_FILE"
+  HEAD="type,month,balance,balance_in_base"
+  echo "$HEAD" > "$NET_WORTH_BY_TYPES_FILE"
+  IN_FILES=$(ls "$DETAILS_DIR"/net_worth-*.csv)
+  for f in $IN_FILES
+  do
+    filename=$(basename "$f" .csv)
+    type="${filename/#net_worth-}"
+    awk -v type="$type" 'BEGIN {OFS=""; FS=","} NR>1 {print type","$0}' "$f" >> "$NET_WORTH_BY_TYPES_FILE"
+  done
+}
+
+# category
+function category() {
+  cat "$DATA_DIR/category.json" | yq -P ".categories" -o csv > "$OUTPUT_DIR/category.csv"
+}
+
+# spending
+function spendings() {
+  SPENDINGS_BY_MONTH_FILE="$OUTPUT_DIR/spendings_by_month.csv"
+  truncate -s 0 "$SPENDINGS_BY_MONTH_FILE"
+  echo "month,amount" > "$SPENDINGS_BY_MONTH_FILE"
+
+  SPENDINGS_FILE="$OUTPUT_DIR/spendings.csv"
+  truncate -s 0 "$SPENDINGS_FILE"
+  echo "month,category,value" > "$SPENDINGS_FILE"
+
+  IN_FILES=$(ls "$DATA_DIR"/spending-*.json)
+  for f in $IN_FILES
+  do
+    fn=$(basename $f .json)
+
+    cat $f | yq -P ".category_totals[].categories | to_entries" -o csv > "$DETAILS_DIR/$fn.csv"
+
+    month="${fn/#spending-}"
+    awk -v month="$month" 'BEGIN {OFS=""; FS=","} NR>1 {print month","$0}' "$DETAILS_DIR/$fn.csv" >> "$SPENDINGS_FILE"
+
+    AMOUNT=$(cat $f | yq -P ".category_totals[].total")
+    echo "$month,$AMOUNT" >> "$SPENDINGS_BY_MONTH_FILE"
+  done
+}
+
+# cash_flow
+function cash_flow() {
+  CASH_FLOW_FILE="${OUTPUT_DIR}/cash_flow.csv"
+  cat "$DATA_DIR"/cashflow.json | yq -P '.cash_flow | del(.[].categories)' -o csv > "$CASH_FLOW_FILE"
+}
+
+# transactions
+function transactions() {
+  IN_FILES=$(ls "$DATA_DIR"/transactions-*.json)
+  for f in $IN_FILES
+  do
+    fn=$(basename $f .json)
+    cat $f | yq -P ".transactions | del(.[].attachments, .[].attributes, .[].receipts)" -o csv > "$DETAILS_DIR/$fn.csv"
+  done
+
+  TRANSACTIONS_FILE="$OUTPUT_DIR/transactions.csv"
+  truncate -s 0 "$TRANSACTIONS_FILE"
+  HEAD="month,id,amount,date,description_guest,description_pretty,description_raw,raw_transaction_id,created_at,updated_at,expense_type,predicted_expense_type,category_id,account_id,claim_id"
+  echo "$HEAD" > "$TRANSACTIONS_FILE"
+  IN_FILES=$(ls "$DETAILS_DIR"/transactions-*.csv)
+  for f in $IN_FILES
+  do
+    filename=$(basename "$f" .csv)
+    month="${filename/#transactions-}"
+    awk -v month="$month" 'BEGIN {OFS=""; FS=","} NR>1 {print month","$0}' "$f" >> "$TRANSACTIONS_FILE"
+  done
+}
+
+# create_db
+function create_db() {
+  ls "$OUTPUT_DIR"/*.csv | csv-to-sqlite -D -o "$OUTPUT_DIR/moneytree.db"
+}
+
+mkdir -p "$OUTPUT_DIR"
+mkdir -p "$DETAILS_DIR"
+
+snapshot
+account
+account_balances
+net_worth
+category
+spendings
+cash_flow
+transactions
+ 
+create_db

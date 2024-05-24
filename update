@@ -1,0 +1,17 @@
+#!/bin/bash
+
+if [ -z "$1" ]; then
+  echo "usage: update folder"
+  exit
+fi
+
+FOLDER="$1"
+
+echo "Getting token"
+python3 login.py
+
+echo "Fetching data"
+python3 moneytree_scraping.py "$FOLDER"/raw 6
+
+echo "Converting to CSV"
+./2csv "$FOLDER"
