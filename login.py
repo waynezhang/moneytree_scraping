@@ -1,4 +1,5 @@
-from playwright.sync_api import sync_playwright
+from selenium import webdriver
+from selenium.webdriver.common.by import By
 import os
 
 
@@ -6,29 +7,27 @@ if __name__ == "__main__":
     email = os.environ['MT_EMAIL']
     password = os.environ['MT_PASSWORD']
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch()
-        page = browser.new_page()
-        page.goto('http://app.getmoneytree.com')
-        page.wait_for_selector('input[name="guest[email]"]')
+    options = webdriver.ChromeOptions()
+    driver = webdriver.Remote(
+        command_executor='http://192.168.11.12:4444/wd/hub',
+        options=options)
+    try:
+        driver.implicitly_wait(10)
 
-        page.type('input[name="guest[email]"]', email)
-        page.type('input[name="guest[password]"]', password)
-        page.click('.login-form-button')
-        page.wait_for_selector('.free-trial')
+        driver.get('http://app.getmoneytree.com')
+        driver.find_element(By.CSS_SELECTOR,
+                            'input[name="guest[email]"]').send_keys(email)
 
-        accessToken = None
-        for cookie in page.context.cookies():
-            if cookie.get('name') == 'accessToken':
-                accessToken = cookie.get('value')
-                break
+        driver.find_element(By.CSS_SELECTOR,
+                            'input[name="guest[password]"]').send_keys(password)
+        driver.find_element(By.CSS_SELECTOR,
+                            '.login-form-button').click()
+        driver.find_element(By.CSS_SELECTOR,
+                            '.free-trial')
 
-        if accessToken is None:
-            print("No accessToken found")
-            browser.close()
-            exit(-1)
-
+        token = driver.get_cookie("accessToken").get('value')
         with open("bearer_token", "w") as f:
-            f.write(accessToken)
+            f.write(token)
 
-        browser.close()
+    finally:
+        driver.quit()
